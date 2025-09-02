@@ -1,0 +1,7 @@
+pktriot.exe configure
+Input selection [#]: 1
+Input selection [#]: 4
+pktriot.exe edit --name 'SOIL_MONITORING'
+pktriot.exe tunnel http add --domain ancient-grass-83639.pktriot.net --destination localhost --http 80 --letsencrypt
+pktriot.exe info
+pktriot.exe start

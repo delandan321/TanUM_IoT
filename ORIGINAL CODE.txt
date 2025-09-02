@@ -1,0 +1,456 @@
+#include <SoftwareSerial.h>
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h> 
+#include <ESP8266WebServer.h>
+#include <ESP8266HTTPClient.h>
+#include <LiquidCrystal_I2C_Hangul.h>
+#include <Wire.h>
+
+
+LiquidCrystal_I2C_Hangul lcd(0x27,20,4);
+
+SoftwareSerial mySerial(15, 13);  // GPIO 15, 13 OR RX, TX
+
+
+//Sensor2 -START
+SoftwareSerial mySerial2(14, 12); //CHANGE THE PIN 
+//Sensor2 -END
+
+
+const char* ssid = "Jay";                  // Your wifi Name       
+const char* password = "123456789";          // Your wifi Password
+
+const char *host = "10.180.210.66"; //Your pc or server (database) IP, example : 192.168.0.0 , if you are a windows os user, open cmd, then type ipconfig then look at IPv4 Address.
+WiFiClient client;
+
+
+float m;
+float temp;
+float ec;
+float ph;
+float n;
+float p;
+float k;
+
+//Sensor2 -START
+float m2;
+float temp2;
+float ec2;
+float ph2;
+float n2;
+float p2;
+float k2;
+//Sensor2 -END
+
+
+//Sensor Counter
+int sensorcount = 0;
+//Sensor Counter _END
+
+
+
+unsigned int soilHumidity;
+unsigned int soilTemperature;
+unsigned int soilConductivity;
+unsigned int soilPH;
+unsigned int nitrogen;
+unsigned int phosphorus;
+unsigned int potassium;
+
+
+//Sensor2 -START
+unsigned int soilHumidity2;
+unsigned int soilTemperature2;
+unsigned int soilConductivity2;
+unsigned int soilPH2;
+unsigned int nitrogen2;
+unsigned int phosphorus2;
+unsigned int potassium2;
+//Sensor2 -END
+
+
+
+unsigned long lastSensorQueryTime = 0;  // Variable to store the last time the sensor data was queried
+const unsigned long sensorQueryInterval = 1000;  // Interval for querying sensor data (1 second)
+const unsigned long httpRequestInterval = 60000;  // Interval between consecutive HTTP requests (5 seconds)
+unsigned long lastHttpRequestTime1 = 0;  // Variable to store the last time an HTTP request was made
+unsigned long lastHttpRequestTime2 = 0;  // Variable to store the last time an HTTP request was made
+
+
+
+
+//SELECT 2 to remove to change into sensor pin -REMOVE RELATION - OR JUST CHANGE PIN IF POSSIBLE
+//const int wifiStatusLED = 12;      // GPIO pin for WiFi status LED d4
+//const int sensorQueryLED = 14;     // GPIO pin for sensor query LED d2
+const int httpRequestLED = 5;     // GPIO pin for HTTP request LED 
+//end of selection
+
+
+
+//Relay
+const int relay = 0;     // GPIO pin for HTTP request LED
+const int relay2 = 16;
+
+void setup() {
+  Serial.begin(115200);
+
+  //Sensor1
+  mySerial.begin(4800);
+
+  //Sensor2
+  mySerial2.begin(4800);
+
+  lcd.init();
+  lcd.backlight();
+
+//-REMOVE RELATION
+  //pinMode(wifiStatusLED, OUTPUT);
+  //pinMode(sensorQueryLED, OUTPUT);
+  pinMode(httpRequestLED, OUTPUT);
+//END of -REMOVE RELATION
+
+//RELAY
+  pinMode(relay, OUTPUT);
+  digitalWrite(relay, HIGH);
+
+  pinMode(relay2, OUTPUT);
+  digitalWrite(relay2, HIGH);
+
+  WiFi.begin(ssid, password);
+
+  // Attempt to connect to WiFi
+  while (WiFi.status() != WL_CONNECTED) {
+    //digitalWrite(wifiStatusLED, LOW);  // Turn the LED off
+    delay(500);
+    //digitalWrite(wifiStatusLED, HIGH);  // Turn the LED on
+    delay(500);
+    Serial.println("Connecting to WiFi...");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Connecting to WiFi..");
+  }
+  digitalWrite(relay, LOW);
+
+  digitalWrite(relay2, LOW);
+
+  //digitalWrite(wifiStatusLED, HIGH);  // Turn the LED on (stable) once connected
+  Serial.println("Connected to WiFi");
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Connected to WiFi");
+
+  Serial.println("");
+  Serial.println("Connected to Network/SSID");
+
+  lcd.setCursor(0, 1);
+  lcd.print("Connected to Network/SSID");
+
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP()); 
+
+  lcd.setCursor(0, 2);
+  lcd.print("IP: ");
+  lcd.print(WiFi.localIP());
+  delay(1000);
+  
+}
+
+void loop() {
+  unsigned long currentMillis = millis();  // Get the current time
+
+  // WiFi status LED (blink if not connected)
+  if (WiFi.status() != WL_CONNECTED) {
+    //digitalWrite(wifiStatusLED, LOW);  // Turn the LED off
+    delay(500);
+    //digitalWrite(wifiStatusLED, HIGH);  // Turn the LED on
+    delay(500);
+  } else {
+    //digitalWrite(wifiStatusLED, HIGH);  // Keep the LED on if connected
+  }
+
+
+
+//1st sensor
+  if(sensorcount == 0){
+
+    mySerial.listen();
+
+    /*
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Inniating Sensor 1");
+    delay(500);
+
+    */
+
+  // Query sensor data every second
+    if (currentMillis - lastSensorQueryTime >= sensorQueryInterval) {
+      lastSensorQueryTime = currentMillis;  // Update the last sensor query time
+
+      //digitalWrite(sensorQueryLED, HIGH);  // Turn the sensor query LED on
+
+      byte queryData[] = {0x01, 0x03, 0x00, 0x00, 0x00, 0x07, 0x04, 0x08};
+      byte receivedData[19];
+
+      mySerial.write(queryData, sizeof(queryData));  // Send the query data to the NPK sensor
+
+      if (mySerial.available() >= sizeof(receivedData)) {  // Check if there are enough bytes available to read
+        mySerial.readBytes(receivedData, sizeof(receivedData));  // Read the received data into the receivedData array
+
+        Serial.print("HEX DATA RECEIVED: ");
+        for (int i = 0; i < sizeof(receivedData); i++) {
+          Serial.print(receivedData[i], HEX);
+          Serial.print(" ");
+        }
+        Serial.println();
+        soilHumidity = (receivedData[3] << 8) | receivedData[4];
+        soilTemperature = (receivedData[5] << 8) | receivedData[6];
+        soilConductivity = (receivedData[7] << 8) | receivedData[8];
+        soilPH = (receivedData[9] << 8) | receivedData[10];
+        nitrogen = (receivedData[11] << 8) | receivedData[12];
+        phosphorus = (receivedData[13] << 8) | receivedData[14];
+        potassium = (receivedData[15] << 8) | receivedData[16];
+        // Parse and print the received data in decimal format
+        m = 2.1585*(soilHumidity / 10) - 46.056; //soilHumidity / 10, 2.1585x - 46.056 
+        temp = soilTemperature / 10;
+        ec = 0.0843*(soilConductivity) + 124.68; //soilConductivity, 0.0843x + 124.68 
+        ph = 1.0402*(soilPH / 10) + 0.4636; //soilPH / 10, 1.0402x + 0.4636 
+        n = nitrogen;
+        p = 5.3746*(phosphorus) - 4.4537; //phosphorus, 5.3746x - 4.4537 
+        k = -0.2172*(potassium) + 33.381; //potassium, -0.2172x + 33.381  
+      }
+
+      lcd.clear();
+      
+      lcd.setCursor(0, 0);
+      lcd.print("M:");
+      lcd.print(m);
+      lcd.print("%");
+
+      lcd.setCursor(10, 0);  // Adjust for spacing
+      lcd.print("N:");
+      lcd.print(n);
+      lcd.print("ppm");
+
+      lcd.setCursor(0, 1);
+      lcd.print("t:");
+      lcd.print(temp);
+      lcd.print((char)223);  // Degree symbol
+      lcd.print("C");
+
+      lcd.setCursor(10, 1);  // Adjust for spacing
+      lcd.print("P:");
+      lcd.print(p);
+      lcd.print("ppm");
+
+      lcd.setCursor(0, 2);
+      lcd.print("EC:");
+      lcd.print(ec);
+
+      lcd.setCursor(10, 2);  // Adjust for spacing
+      lcd.print("K:");
+      lcd.print(k);
+      lcd.print("ppm");
+
+      lcd.setCursor(0, 3);
+      lcd.print("pH:");
+      lcd.print(ph);
+
+      lcd.setCursor(10, 3);  // Adjust for spacing
+      lcd.print("SENSOR 1");
+
+      //digitalWrite(sensorQueryLED, LOW);  // Turn the sensor query LED off
+    }
+
+    // Make HTTP request every 5 seconds
+    if (currentMillis - lastHttpRequestTime1 >= httpRequestInterval) {
+      lastHttpRequestTime1 = currentMillis;  // Update the last HTTP request time
+
+      //digitalWrite(httpRequestLED, HIGH);  // Turn the HTTP request LED on
+
+      HTTPClient http;    // Declare object of class HTTPClient
+      String postData;
+      String Moisture = String(m);
+      String Temperature = String(temp);
+      String Electrical_Conductivity = String(ec); // Make sure to use underscore (_) in variable names
+      String pH = String(ph);
+      String Nitrogen = String(n);
+      String Phosphorus = String(p);
+      String Potassium = String(k);
+      postData = "m=" + Moisture + "&temp=" + Temperature + "&ec=" + Electrical_Conductivity + "&ph=" + pH + "&n=" + Nitrogen + "&p=" + Phosphorus + "&k=" + Potassium;
+
+      http.begin(client, "http://10.180.210.66/Nodemcu_db_record_view/InsertDB.php"); // Specify request destination
+      http.addHeader("Content-Type", "application/x-www-form-urlencoded");  // Specify content-type header
+
+      int httpCode = http.POST(postData);  // Send the request
+      String payload = http.getString();  // Get the response payload
+
+      Serial.println(httpCode);  // Print HTTP return code
+      Serial.println(payload);  // Print request response payload
+      Serial.println("Moisture= " + Moisture);
+      Serial.println("Temperature= " + Temperature);
+      Serial.println("Electrical Conductivity= " + Electrical_Conductivity);
+      Serial.println("pH= " + pH);
+      Serial.println("Nitrogen= " + Nitrogen);
+      Serial.println("Phosphorus= " + Phosphorus);
+      Serial.println("Potassium= " + Potassium);
+
+      sensorcount = 1;
+
+      http.end();  // Close connection
+
+      //digitalWrite(httpRequestLED, LOW);  // Turn the HTTP request LED off
+      
+    }
+
+    sensorcount = 1;
+
+  }
+
+  
+
+  //2nd Sensor
+  else if(sensorcount == 1){
+
+    mySerial2.listen();
+
+    /*
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Inniating Sensor 2");
+    delay(500);
+  */
+
+
+  // Query sensor data every second
+    if (currentMillis - lastSensorQueryTime >= sensorQueryInterval) {
+      lastSensorQueryTime = currentMillis;  // Update the last sensor query time
+
+      //digitalWrite(sensorQueryLED, HIGH);  // Turn the sensor query LED on
+
+      byte queryData[] = {0x01, 0x03, 0x00, 0x00, 0x00, 0x07, 0x04, 0x08};
+      byte receivedData[19];
+
+      mySerial2.write(queryData, sizeof(queryData));  // Send the query data to the NPK sensor
+
+      if (mySerial2.available() >= sizeof(receivedData)) {  // Check if there are enough bytes available to read
+        mySerial2.readBytes(receivedData, sizeof(receivedData));  // Read the received data into the receivedData array
+
+        Serial.print("HEX DATA RECEIVED: ");
+        for (int i = 0; i < sizeof(receivedData); i++) {
+          Serial.print(receivedData[i], HEX);
+          Serial.print(" ");
+        }
+        Serial.println();
+        soilHumidity2 = (receivedData[3] << 8) | receivedData[4];
+        soilTemperature2 = (receivedData[5] << 8) | receivedData[6];
+        soilConductivity2 = (receivedData[7] << 8) | receivedData[8];
+        soilPH2 = (receivedData[9] << 8) | receivedData[10];
+        nitrogen2 = (receivedData[11] << 8) | receivedData[12];
+        phosphorus2 = (receivedData[13] << 8) | receivedData[14];
+        potassium2 = (receivedData[15] << 8) | receivedData[16];
+        // Parse and print the received data in decimal format
+        m2 = 2.1585*(soilHumidity2 / 10) - 46.056; //soilHumidity / 10, 2.1585x - 46.056 
+        temp2 = soilTemperature2 / 10;
+        ec2 = 0.0843*(soilConductivity2) + 124.68; //soilConductivity, 0.0843x + 124.68 
+        ph2 = 1.0402*(soilPH2 / 10) + 0.4636; //soilPH / 10, 1.0402x + 0.4636 
+        n2 = nitrogen2;
+        p2 = 5.3746*(phosphorus2) - 4.4537; //phosphorus, 5.3746x - 4.4537 
+        k2 = -0.2172*(potassium2) + 33.381; //potassium, -0.2172x + 33.381  
+      }
+
+      lcd.clear();
+      
+      lcd.setCursor(0, 0);
+      lcd.print("M2:");
+      lcd.print(m2);
+      lcd.print("%");
+
+      lcd.setCursor(10, 0);  // Adjust for spacing
+      lcd.print("N2:");
+      lcd.print(n2);
+      lcd.print("ppm");
+
+      lcd.setCursor(0, 1);
+      lcd.print("t2:");
+      lcd.print(temp2);
+      lcd.print((char)223);  // Degree symbol
+      lcd.print("C");
+
+      lcd.setCursor(10, 1);  // Adjust for spacing
+      lcd.print("P2:");
+      lcd.print(p2);
+      lcd.print("ppm");
+
+      lcd.setCursor(0, 2);
+      lcd.print("EC2:");
+      lcd.print(ec2);
+
+      lcd.setCursor(10, 2);  // Adjust for spacing
+      lcd.print("K2:");
+      lcd.print(k2);
+      lcd.print("ppm");
+
+      lcd.setCursor(0, 3);
+      lcd.print("pH2:");
+      lcd.print(ph2);
+
+      lcd.setCursor(10, 3);  // Adjust for spacing
+      lcd.print("SENSOR 2");
+
+      //digitalWrite(sensorQueryLED, LOW);  // Turn the sensor query LED off
+    }
+
+    // Make HTTP request every 5 seconds
+    if (currentMillis - lastHttpRequestTime2 >= httpRequestInterval) {
+      lastHttpRequestTime2 = currentMillis;  // Update the last HTTP request time
+
+      //digitalWrite(httpRequestLED, HIGH);  // Turn the HTTP request LED on
+
+      HTTPClient http;    // Declare object of class HTTPClient
+      String postData2;
+      String Moisture2 = String(m2);
+      String Temperature2 = String(temp2);
+      String Electrical_Conductivity2 = String(ec2); // Make sure to use underscore (_) in variable names
+      String pH2 = String(ph2);
+      String Nitrogen2 = String(n2);
+      String Phosphorus2 = String(p2);
+      String Potassium2 = String(k2);
+      postData2 = "m=" + Moisture2 + "&temp=" + Temperature2 + "&ec=" + Electrical_Conductivity2 + "&ph=" + pH2 + "&n=" + Nitrogen2 + "&p=" + Phosphorus2 + "&k=" + Potassium2;
+
+      http.begin(client, "http://10.180.210.66/Nodemcu_db_record_view/InsertDB2.php"); // Specify request destination
+      http.addHeader("Content-Type", "application/x-www-form-urlencoded");  // Specify content-type header
+
+      int httpCode = http.POST(postData2);  // Send the request
+      String payload = http.getString();  // Get the response payload
+
+      Serial.println(httpCode);  // Print HTTP return code
+      Serial.println(payload);  // Print request response payload
+      Serial.println("Moisture2= " + Moisture2);
+      Serial.println("Temperature2= " + Temperature2);
+      Serial.println("Electrical Conductivity2= " + Electrical_Conductivity2);
+      Serial.println("pH2= " + pH2);
+      Serial.println("Nitrogen2= " + Nitrogen2);
+      Serial.println("Phosphorus2= " + Phosphorus2);
+      Serial.println("Potassium2= " + Potassium2);
+
+      sensorcount = 0;
+
+      http.end();  // Close connection
+
+      //digitalWrite(httpRequestLED, LOW);  // Turn the HTTP request LED off
+      
+    }    
+
+    sensorcount = 0;
+
+  } 
+
+  else{
+    sensorcount = 0;
+  }
+
+  //delay(5000);
+
+}
